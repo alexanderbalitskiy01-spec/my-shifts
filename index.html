@@ -35,10 +35,26 @@
             justify-content: space-between;
             align-items: center;
             margin-bottom: 20px;
-            padding-top: 40px; /* Safe area для челки iPhone 11 */
+            padding-top: 40px;
         }
 
-        h1 { margin: 0; font-size: 28px; font-weight: 700; }
+        .month-nav {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-btn {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--blue);
+            cursor: pointer;
+            padding: 5px 15px;
+            font-weight: bold;
+        }
+
+        h1 { margin: 0; font-size: 22px; font-weight: 700; min-width: 130px; text-align: center; }
         
         .btn-export {
             color: var(--blue);
@@ -60,7 +76,7 @@
         .weekdays, .days-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 8px;
+            gap: 6px;
             text-align: center;
         }
 
@@ -72,7 +88,7 @@
         }
 
         .day {
-            aspect-ratio: 1;
+            min-height: 55px;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -80,16 +96,17 @@
             border-radius: 8px;
             font-size: 17px;
             cursor: pointer;
-            background-color: #F8F8F8;
             position: relative;
+            padding: 2px 0;
         }
 
         .day.empty { background: none; cursor: default; }
-        .day .shift-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            margin-top: 4px;
+        
+        .shift-time {
+            font-size: 9px;
+            font-weight: 600;
+            margin-top: 3px;
+            white-space: nowrap;
         }
 
         /* Цвета статусов */
@@ -108,7 +125,7 @@
             -webkit-backdrop-filter: blur(4px);
             z-index: 100;
             justify-content: center;
-            align-items: flex-end; /* Выезжает снизу как в iOS */
+            align-items: flex-end;
         }
 
         .modal {
@@ -148,6 +165,16 @@
             outline: none;
             color: var(--blue);
         }
+
+        /* Улучшенные поля времени для iOS */
+        input[type="time"] {
+            background-color: var(--bg-color);
+            padding: 6px 12px;
+            border-radius: 8px;
+            color: var(--blue);
+            font-weight: 500;
+            -webkit-appearance: none;
+        }
         
         textarea {
             width: 100%;
@@ -173,23 +200,28 @@
         /* Стили для печати (PDF) */
         @media print {
             body { background: #FFF; padding: 0; }
-            .header, .btn-export, .modal-overlay { display: none !important; }
+            .header, .modal-overlay { display: none !important; }
             .calendar-card { box-shadow: none; border: none; padding: 0; }
             h1 { display: block !important; margin-bottom: 20px; text-align: center; }
-            .day { border: 1px solid #000; background: #FFF !important; }
+            .day { border: 1px solid #000; background: #FFF !important; min-height: 40px; }
             .status-work { color: #000; font-weight: bold; }
             .status-work::after { content: " (Р)"; font-size: 10px; }
             .status-off::after { content: " (В)"; font-size: 10px; }
             .status-vacation::after { content: " (О)"; font-size: 10px; }
             .status-unpaid::after { content: " (БС)"; font-size: 10px; }
+            .shift-time { color: #000; }
         }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <h1 id="monthYearTitle">Июль 2026</h1>
-        <button class="btn-export" onclick="exportPDF()">В PDF</button>
+        <div class="month-nav">
+            <button class="nav-btn" onclick="changeMonth(-1)">&#10094;</button>
+            <h1 id="monthYearTitle"></h1>
+            <button class="nav-btn" onclick="changeMonth(1)">&#10095;</button>
+        </div>
+        <button class="btn-export" onclick="exportPDF()">Save</button>
     </div>
 
     <div class="calendar-card">
@@ -199,6 +231,7 @@
         <div class="days-grid" id="calendarGrid"></div>
     </div>
 
+    <!-- Модальное окно -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal" id="modal">
             <div class="modal-header" id="modalTitle">Настройка дня</div>
@@ -207,9 +240,8 @@
                 <div class="form-row">
                     <span>Тип</span>
                     <select id="shiftType" onchange="toggleTimeInputs()">
-                        <option value="none">Не выбрано</option>
-                        <option value="work">Работа (Зеленый)</option>
                         <option value="off">Выходной (Серый)</option>
+                        <option value="work">Работа (Зеленый)</option>
                         <option value="vacation">Отпуск (Синий)</option>
                         <option value="unpaid">За свой счет (Красный)</option>
                     </select>
@@ -241,15 +273,20 @@
     </div>
 
     <script>
-        let currentDate = new Date(); // Берем текущую дату системы
+        let displayedDate = new Date(); // Дата, которая сейчас открыта на экране
         let selectedDate = null;
         let shiftData = JSON.parse(localStorage.getItem('shiftData')) || {};
 
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
+        function changeMonth(offset) {
+            displayedDate.setMonth(displayedDate.getMonth() + offset);
+            renderCalendar();
+        }
+
         function renderCalendar() {
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
+            const year = displayedDate.getFullYear();
+            const month = displayedDate.getMonth();
             
             document.getElementById('monthYearTitle').innerText = `${monthNames[month]} ${year}`;
             
@@ -259,25 +296,30 @@
             const firstDay = new Date(year, month, 1).getDay();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             
-            // Корректировка для ПН как первого дня недели
             let emptyDays = firstDay === 0 ? 6 : firstDay - 1;
 
-            // Пустые ячейки
             for (let i = 0; i < emptyDays; i++) {
                 grid.innerHTML += `<div class="day empty"></div>`;
             }
 
-            // Дни месяца
             for (let day = 1; day <= daysInMonth; day++) {
                 const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const data = shiftData[dateString];
                 
-                let className = 'day';
-                if (data && data.type !== 'none') {
-                    className += ` status-${data.type}`;
+                // Если данных нет, по умолчанию ставим выходной (off)
+                const data = shiftData[dateString] || { type: 'off' };
+                
+                let className = `day status-${data.type}`;
+                
+                // Добавляем текст со временем, если это рабочий день
+                let timeHtml = '';
+                if (data.type === 'work' && data.start && data.end) {
+                    timeHtml = `<div class="shift-time">${data.start}-${data.end}</div>`;
                 }
 
-                grid.innerHTML += `<div class="${className}" onclick="openModal('${dateString}', ${day})">${day}</div>`;
+                grid.innerHTML += `<div class="${className}" onclick="openModal('${dateString}', ${day})">
+                    ${day}
+                    ${timeHtml}
+                </div>`;
             }
         }
 
@@ -286,14 +328,16 @@
             document.getElementById('modalTitle').innerText = `Запись на ${day} число`;
             document.getElementById('modalOverlay').style.display = 'flex';
             
-            // Анимация выезда снизу
             setTimeout(() => document.getElementById('modal').classList.add('show'), 10);
 
-            // Загрузка данных, если они есть
-            const data = shiftData[dateString] || { type: 'none', start: '', end: '', desc: '' };
+            // Подгружаем данные или ставим дефолтные значения (время по умолчанию 08:00-20:00)
+            const data = shiftData[dateString] || { type: 'off', start: '08:00', end: '20:00', desc: '' };
+            
             document.getElementById('shiftType').value = data.type;
-            document.getElementById('timeStart').value = data.start || '';
-            document.getElementById('timeEnd').value = data.end || '';
+            
+            // Если время не было сохранено, подставляем шаблон
+            document.getElementById('timeStart').value = data.start || '08:00';
+            document.getElementById('timeEnd').value = data.end || '20:00';
             document.getElementById('shiftDesc').value = data.desc || '';
             
             toggleTimeInputs();
@@ -303,14 +347,12 @@
             document.getElementById('modal').classList.remove('show');
             setTimeout(() => {
                 document.getElementById('modalOverlay').style.display = 'none';
-            }, 300); // Ждем завершения анимации
+            }, 300);
         }
 
         function toggleTimeInputs() {
             const type = document.getElementById('shiftType').value;
-            const timeSettings = document.getElementById('timeSettings');
-            // Показываем время только если выбрана "Работа"
-            timeSettings.style.display = type === 'work' ? 'block' : 'none';
+            document.getElementById('timeSettings').style.display = type === 'work' ? 'block' : 'none';
         }
 
         function saveShift() {
@@ -318,8 +360,8 @@
             
             shiftData[selectedDate] = {
                 type: type,
-                start: document.getElementById('timeStart').value,
-                end: document.getElementById('timeEnd').value,
+                start: type === 'work' ? document.getElementById('timeStart').value : '',
+                end: type === 'work' ? document.getElementById('timeEnd').value : '',
                 desc: document.getElementById('shiftDesc').value
             };
 
@@ -329,16 +371,13 @@
         }
 
         function exportPDF() {
-            // На iOS вызов печати позволяет сохранить страницу в PDF
             window.print();
         }
 
-        // Закрытие модального окна по клику на темный фон
         document.getElementById('modalOverlay').addEventListener('click', function(e) {
             if(e.target === this) closeModal();
         });
 
-        // Инициализация
         renderCalendar();
     </script>
 </body>
