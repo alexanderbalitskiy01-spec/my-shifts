@@ -69,13 +69,13 @@
         .calendar-card {
             background-color: var(--card-bg);
             border-radius: 14px;
-            padding: 16px 8px; /* Немного уменьшили боковые отступы */
+            padding: 16px 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+            margin-bottom: 24px;
         }
 
         .weekdays, .days-grid {
             display: grid;
-            /* Жестко фиксируем ширину колонок, чтобы текст их не растягивал */
             grid-template-columns: repeat(7, minmax(0, 1fr));
             gap: 4px;
             text-align: center;
@@ -116,6 +116,62 @@
         .status-off { background-color: rgba(174, 174, 178, 0.15) !important; color: #636366; }
         .status-vacation { background-color: rgba(0, 122, 255, 0.15) !important; color: #0056B3; }
         .status-unpaid { background-color: rgba(255, 59, 48, 0.15) !important; color: #C93400; }
+
+        /* Список заметок */
+        .notes-title {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            padding-left: 8px;
+        }
+
+        .note-item-wrapper {
+            position: relative;
+            margin-bottom: 12px;
+            border-radius: 12px;
+            background: var(--card-bg);
+            box-shadow: 0 1px 8px rgba(0,0,0,0.04);
+            overflow: hidden;
+        }
+
+        /* Подложка для свайпа */
+        .swipe-actions-bg {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            z-index: 1;
+        }
+        .swipe-left-bg {
+            flex: 1; background-color: var(--blue);
+            display: flex; align-items: center; justify-content: flex-start;
+            padding-left: 20px; color: #FFF; font-weight: 600; font-size: 15px;
+        }
+        .swipe-right-bg {
+            flex: 1; background-color: var(--red);
+            display: flex; align-items: center; justify-content: flex-end;
+            padding-right: 20px; color: #FFF; font-weight: 600; font-size: 15px;
+        }
+
+        /* Сама карточка заметки */
+        .note-item {
+            position: relative;
+            background: var(--card-bg);
+            padding: 16px;
+            border-radius: 12px;
+            z-index: 2;
+            transition: transform 0.2s ease;
+            touch-action: pan-y; /* Разрешаем только вертикальный скролл браузеру */
+        }
+
+        .note-date { font-weight: 600; font-size: 15px; color: var(--blue); margin-bottom: 6px; }
+        .note-text { font-size: 16px; color: var(--text-main); white-space: pre-wrap; line-height: 1.4; }
+
+        .empty-notes {
+            text-align: center;
+            color: var(--text-muted);
+            padding: 20px 0;
+            font-size: 15px;
+        }
 
         /* Модальное окно */
         .modal-overlay {
@@ -202,7 +258,7 @@
         @media print {
             body { background: #FFF; padding: 0; }
             .header, .modal-overlay { display: none !important; }
-            .calendar-card { box-shadow: none; border: none; padding: 0; }
+            .calendar-card { box-shadow: none; border: none; padding: 0; margin-bottom: 20px; }
             h1 { display: block !important; margin-bottom: 20px; text-align: center; }
             .day { border: 1px solid #000; background: #FFF !important; min-height: 40px; }
             .status-work { color: #000; font-weight: bold; }
@@ -211,6 +267,10 @@
             .status-vacation::after { content: " (О)"; font-size: 10px; }
             .status-unpaid::after { content: " (БС)"; font-size: 10px; }
             .shift-time { color: #000; }
+            
+            .note-item-wrapper { box-shadow: none; border: 1px solid #000; border-radius: 0; margin-bottom: 10px; }
+            .note-item { padding: 10px; border-radius: 0; }
+            .swipe-actions-bg { display: none !important; }
         }
     </style>
 </head>
@@ -230,6 +290,12 @@
             <div>ПН</div><div>ВТ</div><div>СР</div><div>ЧТ</div><div>ПТ</div><div>СБ</div><div>ВС</div>
         </div>
         <div class="days-grid" id="calendarGrid"></div>
+    </div>
+
+    <!-- Блок заметок -->
+    <div id="notesContainer">
+        <div class="notes-title">Заметки</div>
+        <div id="notesList"></div>
     </div>
 
     <!-- Модальное окно -->
@@ -262,7 +328,7 @@
 
             <div class="form-group">
                 <div class="form-row">
-                    <textarea id="shiftDesc" rows="3" placeholder="Заметки (перерывы, задачи...)"></textarea>
+                    <textarea id="shiftDesc" rows="3" placeholder="Заметки"></textarea>
                 </div>
             </div>
 
@@ -279,6 +345,7 @@
         let shiftData = JSON.parse(localStorage.getItem('shiftData')) || {};
 
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        const monthNamesGenitive = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
         function changeMonth(offset) {
             displayedDate.setMonth(displayedDate.getMonth() + offset);
@@ -312,15 +379,136 @@
                 
                 let timeHtml = '';
                 if (data.type === 'work' && data.start && data.end) {
-                    // Разбиваем время на две строчки с помощью <br>
                     timeHtml = `<div class="shift-time">${data.start}<br>${data.end}</div>`;
                 }
+
+                // Индикатор наличия заметки (маленькая точка, по желанию можно убрать, но для календаря полезно)
+                let noteIndicator = (data.desc && data.desc.trim() !== '') ? `<div style="width: 4px; height: 4px; background: #007AFF; border-radius: 50%; margin-top: 2px;"></div>` : '';
 
                 grid.innerHTML += `<div class="${className}" onclick="openModal('${dateString}', ${day})">
                     ${day}
                     ${timeHtml}
+                    ${noteIndicator}
                 </div>`;
             }
+            
+            renderNotes();
+        }
+
+        function renderNotes() {
+            const year = displayedDate.getFullYear();
+            const month = displayedDate.getMonth();
+            const notesList = document.getElementById('notesList');
+            notesList.innerHTML = '';
+
+            let hasNotes = false;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const data = shiftData[dateString];
+                
+                if (data && data.desc && data.desc.trim() !== '') {
+                    hasNotes = true;
+                    
+                    notesList.innerHTML += `
+                        <div class="note-item-wrapper">
+                            <div class="swipe-actions-bg">
+                                <div class="swipe-left-bg">✏️ Изменить</div>
+                                <div class="swipe-right-bg">Удалить 🗑️</div>
+                            </div>
+                            <div class="note-item" data-date="${dateString}" data-day="${day}">
+                                <div class="note-date">${day} ${monthNamesGenitive[month]}</div>
+                                <div class="note-text">${data.desc}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            if (!hasNotes) {
+                notesList.innerHTML = `<div class="empty-notes">В этом месяце нет заметок</div>`;
+            } else {
+                initSwipeGestures();
+            }
+        }
+
+        function initSwipeGestures() {
+            const items = document.querySelectorAll('.note-item');
+            
+            items.forEach(item => {
+                let startX = 0;
+                let startY = 0;
+                let currentX = 0;
+                let isDragging = false;
+
+                item.addEventListener('touchstart', (e) => {
+                    startX = e.touches[0].clientX;
+                    startY = e.touches[0].clientY;
+                    isDragging = true;
+                    item.style.transition = 'none';
+                }, {passive: true});
+
+                item.addEventListener('touchmove', (e) => {
+                    if (!isDragging) return;
+                    
+                    currentX = e.touches[0].clientX;
+                    const currentY = e.touches[0].clientY;
+                    
+                    const diffX = currentX - startX;
+                    const diffY = Math.abs(currentY - startY);
+
+                    // Если свайп больше вертикальный, отменяем анимацию свайпа вбок (чтобы не мешать скроллу страницы)
+                    if (diffY > Math.abs(diffX) && Math.abs(diffX) < 20) {
+                        isDragging = false;
+                        return;
+                    }
+
+                    // Ограничиваем свайп, чтобы карточка не улетала слишком далеко
+                    let translateX = diffX;
+                    if (translateX > 120) translateX = 120;
+                    if (translateX < -120) translateX = -120;
+
+                    item.style.transform = `translateX(${translateX}px)`;
+                }, {passive: true});
+
+                item.addEventListener('touchend', (e) => {
+                    if (!isDragging) return;
+                    isDragging = false;
+                    
+                    const diffX = currentX - startX;
+                    item.style.transition = 'transform 0.3s ease';
+
+                    const dateString = item.getAttribute('data-date');
+                    const day = item.getAttribute('data-day');
+
+                    // Свайп влево (удаление)
+                    if (diffX < -70) {
+                        item.style.transform = `translateX(-100%)`;
+                        setTimeout(() => {
+                            if (confirm('Удалить эту заметку?')) {
+                                shiftData[dateString].desc = '';
+                                localStorage.setItem('shiftData', JSON.stringify(shiftData));
+                                renderCalendar();
+                            } else {
+                                item.style.transform = 'translateX(0)';
+                            }
+                        }, 250);
+                    } 
+                    // Свайп вправо (редактирование)
+                    else if (diffX > 70) {
+                        item.style.transform = `translateX(100%)`;
+                        setTimeout(() => {
+                            item.style.transform = 'translateX(0)';
+                            openModal(dateString, day);
+                        }, 250);
+                    } 
+                    // Возврат на место, если свайп был слишком коротким
+                    else {
+                        item.style.transform = 'translateX(0)';
+                    }
+                });
+            });
         }
 
         function openModal(dateString, day) {
