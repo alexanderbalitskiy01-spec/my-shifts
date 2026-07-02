@@ -160,7 +160,7 @@
             border-radius: 12px;
             z-index: 2;
             transition: transform 0.2s ease;
-            touch-action: pan-y; /* Разрешаем только вертикальный скролл браузеру */
+            touch-action: pan-y;
         }
 
         .note-date { font-weight: 600; font-size: 15px; color: var(--blue); margin-bottom: 6px; }
@@ -173,7 +173,7 @@
             font-size: 15px;
         }
 
-        /* Модальное окно */
+        /* Модальное окно редактора */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -254,10 +254,48 @@
         .btn-cancel { background: var(--card-bg); color: var(--red); }
         .btn-save { background: var(--blue); color: #FFF; }
 
+        /* Кастомный Alert iOS (Подтверждение удаления) */
+        .ios-alert-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .ios-alert-overlay.show { opacity: 1; }
+        
+        .ios-alert {
+            background: rgba(242, 242, 247, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            width: 270px;
+            border-radius: 14px;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            transform: scale(1.1);
+            transition: transform 0.2s ease-out;
+        }
+        .ios-alert-overlay.show .ios-alert { transform: scale(1); }
+        
+        .ios-alert-title { font-weight: 600; font-size: 17px; padding: 20px 16px 5px; color: #000; }
+        .ios-alert-text { font-size: 13px; padding: 0 16px 15px; color: #000; }
+        .ios-alert-actions { display: flex; border-top: 1px solid rgba(60,60,67,0.29); }
+        
+        .ios-btn {
+            flex: 1; padding: 12px; font-size: 17px; background: none; border: none; cursor: pointer;
+        }
+        .ios-btn-cancel { font-weight: 400; color: var(--blue); border-right: 1px solid rgba(60,60,67,0.29); }
+        .ios-btn-delete { font-weight: 600; color: var(--red); }
+
         /* Стили для печати (PDF) */
         @media print {
             body { background: #FFF; padding: 0; }
-            .header, .modal-overlay { display: none !important; }
+            .header, .modal-overlay, .ios-alert-overlay { display: none !important; }
             .calendar-card { box-shadow: none; border: none; padding: 0; margin-bottom: 20px; }
             h1 { display: block !important; margin-bottom: 20px; text-align: center; }
             .day { border: 1px solid #000; background: #FFF !important; min-height: 40px; }
@@ -292,13 +330,12 @@
         <div class="days-grid" id="calendarGrid"></div>
     </div>
 
-    <!-- Блок заметок -->
     <div id="notesContainer">
         <div class="notes-title">Заметки</div>
         <div id="notesList"></div>
     </div>
 
-    <!-- Модальное окно -->
+    <!-- Модальное окно настройки дня -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal" id="modal">
             <div class="modal-header" id="modalTitle">Настройка дня</div>
@@ -339,10 +376,25 @@
         </div>
     </div>
 
+    <!-- Кастомное окно подтверждения удаления -->
+    <div class="ios-alert-overlay" id="confirmOverlay">
+        <div class="ios-alert">
+            <div class="ios-alert-title">Удалить заметку?</div>
+            <div class="ios-alert-text">Эта заметка будет удалена безвозвратно.</div>
+            <div class="ios-alert-actions">
+                <button class="ios-btn ios-btn-cancel" onclick="closeConfirm()">Отмена</button>
+                <button class="ios-btn ios-btn-delete" onclick="executeDelete()">Удалить</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         let displayedDate = new Date();
         let selectedDate = null;
         let shiftData = JSON.parse(localStorage.getItem('shiftData')) || {};
+        
+        let noteToDelete = null;
+        let itemToReset = null;
 
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
         const monthNamesGenitive = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
@@ -372,7 +424,6 @@
 
             for (let day = 1; day <= daysInMonth; day++) {
                 const dateString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                
                 const data = shiftData[dateString] || { type: 'off' };
                 
                 let className = `day status-${data.type}`;
@@ -382,7 +433,6 @@
                     timeHtml = `<div class="shift-time">${data.start}<br>${data.end}</div>`;
                 }
 
-                // Индикатор наличия заметки (маленькая точка, по желанию можно убрать, но для календаря полезно)
                 let noteIndicator = (data.desc && data.desc.trim() !== '') ? `<div style="width: 4px; height: 4px; background: #007AFF; border-radius: 50%; margin-top: 2px;"></div>` : '';
 
                 grid.innerHTML += `<div class="${className}" onclick="openModal('${dateString}', ${day})">
@@ -458,13 +508,11 @@
                     const diffX = currentX - startX;
                     const diffY = Math.abs(currentY - startY);
 
-                    // Если свайп больше вертикальный, отменяем анимацию свайпа вбок (чтобы не мешать скроллу страницы)
                     if (diffY > Math.abs(diffX) && Math.abs(diffX) < 20) {
                         isDragging = false;
                         return;
                     }
 
-                    // Ограничиваем свайп, чтобы карточка не улетала слишком далеко
                     let translateX = diffX;
                     if (translateX > 120) translateX = 120;
                     if (translateX < -120) translateX = -120;
@@ -484,31 +532,55 @@
 
                     // Свайп влево (удаление)
                     if (diffX < -70) {
-                        item.style.transform = `translateX(-100%)`;
+                        item.style.transform = `translateX(-100vw)`;
                         setTimeout(() => {
-                            if (confirm('Удалить эту заметку?')) {
-                                shiftData[dateString].desc = '';
-                                localStorage.setItem('shiftData', JSON.stringify(shiftData));
-                                renderCalendar();
-                            } else {
-                                item.style.transform = 'translateX(0)';
-                            }
+                            showConfirm(dateString, item);
                         }, 250);
                     } 
                     // Свайп вправо (редактирование)
                     else if (diffX > 70) {
-                        item.style.transform = `translateX(100%)`;
+                        item.style.transform = `translateX(100vw)`;
                         setTimeout(() => {
                             item.style.transform = 'translateX(0)';
                             openModal(dateString, day);
-                        }, 250);
+                        }, 200);
                     } 
-                    // Возврат на место, если свайп был слишком коротким
+                    // Возврат на место
                     else {
                         item.style.transform = 'translateX(0)';
                     }
                 });
             });
+        }
+
+        // Функции кастомного Alert
+        function showConfirm(dateString, item) {
+            noteToDelete = dateString;
+            itemToReset = item;
+            document.getElementById('confirmOverlay').style.display = 'flex';
+            setTimeout(() => document.getElementById('confirmOverlay').classList.add('show'), 10);
+        }
+
+        function closeConfirm() {
+            document.getElementById('confirmOverlay').classList.remove('show');
+            setTimeout(() => {
+                document.getElementById('confirmOverlay').style.display = 'none';
+                if (itemToReset) {
+                    itemToReset.style.transform = 'translateX(0)';
+                    itemToReset = null;
+                }
+                noteToDelete = null;
+            }, 200);
+        }
+
+        function executeDelete() {
+            if (noteToDelete) {
+                shiftData[noteToDelete].desc = '';
+                localStorage.setItem('shiftData', JSON.stringify(shiftData));
+                itemToReset = null; // Отменяем возврат карточки, так как она удалена
+                renderCalendar();
+            }
+            closeConfirm();
         }
 
         function openModal(dateString, day) {
