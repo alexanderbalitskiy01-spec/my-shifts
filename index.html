@@ -173,7 +173,7 @@
             font-size: 15px;
         }
 
-        /* Модальное окно редактора */
+        /* Модальные окна (общие стили) */
         .modal-overlay {
             display: none;
             position: fixed;
@@ -254,48 +254,10 @@
         .btn-cancel { background: var(--card-bg); color: var(--red); }
         .btn-save { background: var(--blue); color: #FFF; }
 
-        /* Кастомный Alert iOS (Подтверждение удаления) */
-        .ios-alert-overlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.4);
-            z-index: 200;
-            justify-content: center;
-            align-items: center;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        .ios-alert-overlay.show { opacity: 1; }
-        
-        .ios-alert {
-            background: rgba(242, 242, 247, 0.95);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            width: 270px;
-            border-radius: 14px;
-            text-align: center;
-            display: flex;
-            flex-direction: column;
-            transform: scale(1.1);
-            transition: transform 0.2s ease-out;
-        }
-        .ios-alert-overlay.show .ios-alert { transform: scale(1); }
-        
-        .ios-alert-title { font-weight: 600; font-size: 17px; padding: 20px 16px 5px; color: #000; }
-        .ios-alert-text { font-size: 13px; padding: 0 16px 15px; color: #000; }
-        .ios-alert-actions { display: flex; border-top: 1px solid rgba(60,60,67,0.29); }
-        
-        .ios-btn {
-            flex: 1; padding: 12px; font-size: 17px; background: none; border: none; cursor: pointer;
-        }
-        .ios-btn-cancel { font-weight: 400; color: var(--blue); border-right: 1px solid rgba(60,60,67,0.29); }
-        .ios-btn-delete { font-weight: 600; color: var(--red); }
-
         /* Стили для печати (PDF) */
         @media print {
             body { background: #FFF; padding: 0; }
-            .header, .modal-overlay, .ios-alert-overlay { display: none !important; }
+            .header, .modal-overlay { display: none !important; }
             .calendar-card { box-shadow: none; border: none; padding: 0; margin-bottom: 20px; }
             h1 { display: block !important; margin-bottom: 20px; text-align: center; }
             .day { border: 1px solid #000; background: #FFF !important; min-height: 40px; }
@@ -335,7 +297,6 @@
         <div id="notesList"></div>
     </div>
 
-    <!-- Модальное окно настройки дня -->
     <div class="modal-overlay" id="modalOverlay">
         <div class="modal" id="modal">
             <div class="modal-header" id="modalTitle">Настройка дня</div>
@@ -376,14 +337,19 @@
         </div>
     </div>
 
-    <!-- Кастомное окно подтверждения удаления -->
-    <div class="ios-alert-overlay" id="confirmOverlay">
-        <div class="ios-alert">
-            <div class="ios-alert-title">Удалить заметку?</div>
-            <div class="ios-alert-text">Эта заметка будет удалена безвозвратно.</div>
-            <div class="ios-alert-actions">
-                <button class="ios-btn ios-btn-cancel" onclick="closeConfirm()">Отмена</button>
-                <button class="ios-btn ios-btn-delete" onclick="executeDelete()">Удалить</button>
+    <div class="modal-overlay" id="deleteModalOverlay">
+        <div class="modal" id="deleteModal">
+            <div class="modal-header">Удаление заметки</div>
+            
+            <div class="form-group">
+                <div class="form-row" style="justify-content: center; color: var(--text-muted); font-size: 15px; text-align: center; padding: 20px 16px;">
+                    Точно удалить эту заметку безвозвратно?
+                </div>
+            </div>
+
+            <div class="btn-group">
+                <button class="btn btn-cancel" style="color: var(--text-main);" onclick="closeDeleteModal()">Отмена</button>
+                <button class="btn btn-save" style="background: var(--red);" onclick="executeDelete()">Удалить</button>
             </div>
         </div>
     </div>
@@ -553,36 +519,7 @@
             });
         }
 
-        // Функции кастомного Alert
-        function showConfirm(dateString, item) {
-            noteToDelete = dateString;
-            itemToReset = item;
-            document.getElementById('confirmOverlay').style.display = 'flex';
-            setTimeout(() => document.getElementById('confirmOverlay').classList.add('show'), 10);
-        }
-
-        function closeConfirm() {
-            document.getElementById('confirmOverlay').classList.remove('show');
-            setTimeout(() => {
-                document.getElementById('confirmOverlay').style.display = 'none';
-                if (itemToReset) {
-                    itemToReset.style.transform = 'translateX(0)';
-                    itemToReset = null;
-                }
-                noteToDelete = null;
-            }, 200);
-        }
-
-        function executeDelete() {
-            if (noteToDelete) {
-                shiftData[noteToDelete].desc = '';
-                localStorage.setItem('shiftData', JSON.stringify(shiftData));
-                itemToReset = null; // Отменяем возврат карточки, так как она удалена
-                renderCalendar();
-            }
-            closeConfirm();
-        }
-
+        // Шторка редактирования
         function openModal(dateString, day) {
             selectedDate = dateString;
             document.getElementById('modalTitle').innerText = `Запись на ${day} число`;
@@ -628,12 +565,46 @@
             renderCalendar();
         }
 
+        // Шторка удаления
+        function showConfirm(dateString, item) {
+            noteToDelete = dateString;
+            itemToReset = item;
+            document.getElementById('deleteModalOverlay').style.display = 'flex';
+            setTimeout(() => document.getElementById('deleteModal').classList.add('show'), 10);
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.remove('show');
+            setTimeout(() => {
+                document.getElementById('deleteModalOverlay').style.display = 'none';
+                if (itemToReset) {
+                    itemToReset.style.transform = 'translateX(0)';
+                    itemToReset = null;
+                }
+                noteToDelete = null;
+            }, 300);
+        }
+
+        function executeDelete() {
+            if (noteToDelete) {
+                shiftData[noteToDelete].desc = '';
+                localStorage.setItem('shiftData', JSON.stringify(shiftData));
+                itemToReset = null; 
+                renderCalendar();
+            }
+            closeDeleteModal();
+        }
+
         function exportPDF() {
             window.print();
         }
 
+        // Закрытие по клику на темный фон
         document.getElementById('modalOverlay').addEventListener('click', function(e) {
             if(e.target === this) closeModal();
+        });
+        document.getElementById('deleteModalOverlay').addEventListener('click', function(e) {
+            if(e.target === this) closeDeleteModal();
         });
 
         renderCalendar();
